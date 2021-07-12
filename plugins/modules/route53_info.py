@@ -213,6 +213,7 @@ except ImportError:
 from ansible.module_utils._text import to_native
 
 from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
+from ansible_collections.amazon.aws.plugins.module_utils.core import is_boto3_error_code
 
 
 def get_hosted_zone(client, module):
@@ -374,7 +375,23 @@ def record_sets_details(client, module):
         params['StartRecordType'] = module.params.get('type')
 
     paginator = client.get_paginator('list_resource_record_sets')
-    record_sets = paginator.paginate(**params).build_full_result()['ResourceRecordSets']
+    try:
+        record_sets = paginator.paginate(**params).build_full_result()['ResourceRecordSets']
+    except is_boto3_error_code('ThrottlingException'):
+        # The route53 API will only return 300 resource records at a time, maximum.
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/route53.html#Route53.Client.list_resource_record_sets
+        # On fast hardware/network with many (ie; thousands) of RRs, it's possible to exceed the
+        # 5 requests per second via pagination.  If that happens, we need to page with artificial
+        # latency via less efficient python.
+        record_sets = []
+        # Override user-supplied MaxItems if provided; if we're throttled we want larger pages
+        params['PaginationConfig'] = {'PageSize': 300}
+        record_pages = paginator.paginate(**params)
+        for page in record_pages:
+            record_sets.extend(page['ResourceRecordSets'])
+
+    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
+        module.fail_json_aws(e, msg="")
     return {
         "ResourceRecordSets": record_sets,
         "list": record_sets,
