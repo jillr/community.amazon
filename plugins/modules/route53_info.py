@@ -216,9 +216,7 @@ from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSM
 from ansible_collections.amazon.aws.plugins.module_utils.core import is_boto3_error_code
 from ansible_collections.amazon.aws.plugins.module_utils.ec2 import AWSRetry
 from time import sleep
-from ansible.utils.display import Display
 
-display = Display()
 
 def get_hosted_zone(client, module):
     params = dict()
@@ -380,10 +378,14 @@ def record_sets_details(client, module):
         params['StartRecordType'] = module.params.get('type')
 
     paginator = client.get_paginator('list_resource_record_sets')
+    import logging
+    import boto3
+    logging.basicConfig(filename='boto.log')
+    boto3.set_stream_logger('', logging.DEBUG)
     try:
-        display.v('paginate paginate')
+        logging.warning('paginate paginate')
         record_sets = paginator.paginate(**params).build_full_result()['ResourceRecordSets']
-        display.v(record_sets)
+        logging.warning(record_sets)
     except is_boto3_error_code('ThrottlingException'):
         # The route53 API will only return 300 resource records at a time, maximum.
         # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/route53.html#Route53.Client.list_resource_record_sets
@@ -398,9 +400,11 @@ def record_sets_details(client, module):
         for page in record_pages:
             record_sets.extend(page['ResourceRecordSets'])
             # Cheaply see if 1. we've caught throttling and 2. how long it takes to get throttled
-            display.v("Page loop count is {}".format(count))
+            logging.warning("Page loop count is {}".format(count))
             count +=count
     except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
+        module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f")
+    except Exception as e:
         module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f")
 
     return {
