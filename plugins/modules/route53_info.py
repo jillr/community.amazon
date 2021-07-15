@@ -217,6 +217,8 @@ from ansible_collections.amazon.aws.plugins.module_utils.core import is_boto3_er
 from ansible_collections.amazon.aws.plugins.module_utils.core import is_boto3_error_message
 from ansible_collections.amazon.aws.plugins.module_utils.ec2 import AWSRetry
 from time import sleep
+from ansible.utils.display import Display
+display = Display()
 
 
 def get_hosted_zone(client, module):
@@ -386,11 +388,13 @@ def record_sets_details(client, module):
 #    logging.basicConfig(filename='/home/zuul/src/github.com/ansible/workshops/boto.log')
 #    boto3.set_stream_logger('', logging.DEBUG)
     foo = "zero"
+    display.warning('zero')
     try:
 #        logging.warning('paginate paginate')
         record_sets = paginator.paginate(**params).build_full_result()['ResourceRecordSets']
 #        logging.warning(record_sets)
         foo = "one"
+        display.warning('one')
     except is_boto3_error_code('ThrottlingException'):
         # The route53 API will only return 300 resource records at a time, maximum.
         # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/route53.html#Route53.Client.list_resource_record_sets
@@ -403,6 +407,7 @@ def record_sets_details(client, module):
         record_pages = paginator.paginate(**params)
         count = 1
         foo = "two"
+        display.warning('two')
         for page in record_pages:
             record_sets.extend(page['ResourceRecordSets'])
             # Cheaply see if 1. we've caught throttling and 2. how long it takes to get throttled
@@ -412,6 +417,7 @@ def record_sets_details(client, module):
         if is_boto3_error_message('Throttling', e):
             record_pages = paginator.paginate(**params)
             foo = 'three'
+            display.warning('three')
             record_sets = []
             params['PaginationConfig'] = {'PageSize': 300}
             for page in record_pages:
@@ -419,6 +425,7 @@ def record_sets_details(client, module):
         else:
             module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f, code is {}".format(e['Error']['Code']))
     except Exception as e:  # pylint: disable=duplicate-except
+        display.warning('four')
         module.fail_json_aws(e, msg="smaphameggs, be easy to ctrl+f")
 
     return {
