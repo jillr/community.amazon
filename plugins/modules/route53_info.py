@@ -357,7 +357,9 @@ def list_health_checks(client, module):
     }
 
 
-@AWSRetry.jittered_backoff(catch_extra_error_codes=['ThrottlingException'])
+#@AWSRetry.jittered_backoff(catch_extra_error_codes=['ThrottlingException'])
+
+
 def record_sets_details(client, module):
     params = dict()
 
@@ -380,12 +382,14 @@ def record_sets_details(client, module):
     paginator = client.get_paginator('list_resource_record_sets')
     import logging
     import boto3
-    logging.basicConfig(filename='/home/zuul/boto.log')
+#    logging.basicConfig(filename='/home/zuul/boto.log')
     boto3.set_stream_logger('', logging.DEBUG)
+    foo = "zero"
     try:
         logging.warning('paginate paginate')
         record_sets = paginator.paginate(**params).build_full_result()['ResourceRecordSets']
         logging.warning(record_sets)
+        foo = "one"
     except is_boto3_error_code('ThrottlingException'):
         # The route53 API will only return 300 resource records at a time, maximum.
         # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/route53.html#Route53.Client.list_resource_record_sets
@@ -400,8 +404,9 @@ def record_sets_details(client, module):
         for page in record_pages:
             record_sets.extend(page['ResourceRecordSets'])
             # Cheaply see if 1. we've caught throttling and 2. how long it takes to get throttled
-            logging.warning("Page loop count is {}".format(count))
+            logging.warning("WHAM Page loop count is {}".format(count))
             count +=count
+        foo = "two"
     except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
         module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f")
     except Exception as e:
@@ -410,6 +415,7 @@ def record_sets_details(client, module):
     return {
         "ResourceRecordSets": record_sets,
         "list": record_sets,
+        "foo": foo
     }
 
 
