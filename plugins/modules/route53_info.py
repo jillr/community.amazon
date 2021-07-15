@@ -382,7 +382,7 @@ def record_sets_details(client, module):
     paginator = client.get_paginator('list_resource_record_sets')
     import logging
     import boto3
-#    logging.basicConfig(filename='/home/zuul/boto.log')
+    logging.basicConfig(filename='/home/zuul/src/github.com/ansible/workshops/boto.log')
     boto3.set_stream_logger('', logging.DEBUG)
     foo = "zero"
     try:
