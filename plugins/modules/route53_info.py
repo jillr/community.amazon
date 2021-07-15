@@ -214,6 +214,7 @@ from ansible.module_utils._text import to_native
 
 from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
 from ansible_collections.amazon.aws.plugins.module_utils.core import is_boto3_error_code
+from ansible_collections.amazon.aws.plugins.module_utils.core import is_boto3_error_message
 from ansible_collections.amazon.aws.plugins.module_utils.ec2 import AWSRetry
 from time import sleep
 
@@ -401,16 +402,24 @@ def record_sets_details(client, module):
         params['PaginationConfig'] = {'PageSize': 300}
         record_pages = paginator.paginate(**params)
         count = 1
+        foo = "two"
         for page in record_pages:
             record_sets.extend(page['ResourceRecordSets'])
             # Cheaply see if 1. we've caught throttling and 2. how long it takes to get throttled
 #            logging.warning("WHAM Page loop count is {}".format(count))
 #            count +=count
-        foo = "two"
-    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:
-        module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f")
-    except Exception as e:
-        module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f")
+    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:  # pylint: disable=duplicate-except
+        if is_boto3_error_message('Throttling', e):
+            record_pages = paginator.paginate(**params)
+            foo = 'three'
+            record_sets = []
+            params['PaginationConfig'] = {'PageSize': 300}
+            for page in record_pages:
+                record_sets.extend(page['ResourceRecordSets'])
+        else:
+            module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f, code is {}".format(e['Error']['Code']))
+    except Exception as e:  # pylint: disable=duplicate-except
+        module.fail_json_aws(e, msg="smaphameggs, be easy to ctrl+f")
 
     return {
         "ResourceRecordSets": record_sets,
