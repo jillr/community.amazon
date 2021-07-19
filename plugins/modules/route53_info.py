@@ -390,7 +390,7 @@ def record_sets_details(client, module):
         foo = 'one'
         record_sets = paginator.paginate(**params).build_full_result()['ResourceRecordSets']
 #        logging.warning(record_sets)
-    except is_boto3_error_code('ThrottlingException'):
+    except is_boto3_error_message('Throttling'):
         # The route53 API will only return 300 resource records at a time, maximum.
         # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/route53.html#Route53.Client.list_resource_record_sets
         # On fast hardware/network with many (ie; thousands) of RRs, it's possible to exceed the
@@ -400,10 +400,10 @@ def record_sets_details(client, module):
         # Override user-supplied MaxItems if provided; if we're throttled we want larger pages
         params['PaginationConfig'] = {'PageSize': 300}
         record_pages = paginator.paginate(**params)
-        count = 1
         foo = 'two'
         for page in record_pages:
             record_sets.extend(page['ResourceRecordSets'])
+            sleep(0.25)
     except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:  # pylint: disable=duplicate-except
         try:
             record_pages = paginator.paginate(**params)
@@ -412,7 +412,8 @@ def record_sets_details(client, module):
             params['PaginationConfig'] = {'PageSize': 300}
             for page in record_pages:
                 record_sets.extend(page['ResourceRecordSets'])
-                sleep(1)
+                # 1/4 second should keep us under the 5 requests per second threshold
+                sleep(0.25)
         except is_boto3_error_message('Throttling'):
             module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f, code is {}".format(e['Error']['Code']))
     except Exception as e:  # pylint: disable=duplicate-except
