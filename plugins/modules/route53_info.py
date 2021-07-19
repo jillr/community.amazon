@@ -387,6 +387,7 @@ def record_sets_details(client, module):
 #    boto3.set_stream_logger('', logging.DEBUG)
     try:
 #        logging.warning('paginate paginate')
+        foo = 'one'
         record_sets = paginator.paginate(**params).build_full_result()['ResourceRecordSets']
 #        logging.warning(record_sets)
     except is_boto3_error_code('ThrottlingException'):
@@ -400,6 +401,7 @@ def record_sets_details(client, module):
         params['PaginationConfig'] = {'PageSize': 300}
         record_pages = paginator.paginate(**params)
         count = 1
+        foo = 'two'
         for page in record_pages:
             record_sets.extend(page['ResourceRecordSets'])
     except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:  # pylint: disable=duplicate-except
@@ -410,7 +412,7 @@ def record_sets_details(client, module):
             params['PaginationConfig'] = {'PageSize': 300}
             for page in record_pages:
                 record_sets.extend(page['ResourceRecordSets'])
-                sleep(0.25)
+                sleep(1)
         except is_boto3_error_message('Throttling'):
             module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f, code is {}".format(e['Error']['Code']))
     except Exception as e:  # pylint: disable=duplicate-except
