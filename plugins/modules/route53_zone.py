@@ -120,6 +120,8 @@ delegation_set_id:
 
 import time
 from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
+from ansible_collections.amazon.aws.plugins.module_utils.core import is_boto3_error_message
+
 
 try:
     from botocore.exceptions import BotoCoreError, ClientError
@@ -131,6 +133,16 @@ def find_zones(module, client, zone_in, private_zone):
     try:
         paginator = client.get_paginator('list_hosted_zones')
         results = paginator.paginate().build_full_result()
+    except is_boto3_error_message('Throttling'):
+        # The route53 API will only return 100 zones at a time, maximum.
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/route53.html#Route53.Client.list_rhosted_zones
+        # On fast hardware/network with a busy account, it's possible to exceed the
+        # API limits via pagination.  If that happens, we need to page with artificial latency        results = []
+        # Override user-supplied MaxItems if provided; if we're throttled we want larger pages
+        rr_result = paginator.paginate(PaginationConfig={'PageSize': 100})
+        for page in rr_result:
+            results.extend(page)
+            time.sleep(0.25)
     except (BotoCoreError, ClientError) as e:
         module.fail_json_aws(e, msg="Could not list current hosted zones")
     zones = []

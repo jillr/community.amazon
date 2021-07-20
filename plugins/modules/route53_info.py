@@ -219,8 +219,7 @@ from ansible_collections.amazon.aws.plugins.module_utils.ec2 import AWSRetry
 from time import sleep
 
 
-#@AWSRetry.jittered_backoff(catch_extra_error_codes=['ThrottlingException'])
-
+@AWSRetry.exponential_backoff(catch_extra_error_codes=['Throttling', 'ThrottlingException'])
 def record_sets_details(client, module):
     params = dict()
 
