@@ -219,6 +219,73 @@ from ansible_collections.amazon.aws.plugins.module_utils.ec2 import AWSRetry
 from time import sleep
 
 
+#@AWSRetry.jittered_backoff(catch_extra_error_codes=['ThrottlingException'])
+
+def record_sets_details(client, module):
+    params = dict()
+
+    if module.params.get('hosted_zone_id'):
+        params['HostedZoneId'] = module.params.get('hosted_zone_id')
+    else:
+        module.fail_json(msg="Hosted Zone Id is required")
+
+    if module.params.get('max_items'):
+        params['MaxItems'] = module.params.get('max_items')
+
+    if module.params.get('start_record_name'):
+        params['StartRecordName'] = module.params.get('start_record_name')
+
+    if module.params.get('type') and not module.params.get('start_record_name'):
+        module.fail_json(msg="start_record_name must be specified if type is set")
+    elif module.params.get('type'):
+        params['StartRecordType'] = module.params.get('type')
+
+    paginator = client.get_paginator('list_resource_record_sets')
+#    import logging
+#    import boto3
+#    logging.basicConfig(filename='/home/zuul/src/github.com/ansible/workshops/boto.log')
+#    boto3.set_stream_logger('', logging.DEBUG)
+    try:
+#        logging.warning('paginate paginate')
+        foo = 'one'
+        record_sets = paginator.paginate(**params).build_full_result()['ResourceRecordSets']
+#        logging.warning(record_sets)
+    except is_boto3_error_message('Throttling'):
+        # The route53 API will only return 300 resource records at a time, maximum.
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/route53.html#Route53.Client.list_resource_record_sets
+        # On fast hardware/network with many (ie; thousands) of RRs, it's possible to exceed the
+        # 5 requests per second via pagination.  If that happens, we need to page with artificial
+        # latency via less efficient python.
+        record_sets = []
+        # Override user-supplied MaxItems if provided; if we're throttled we want larger pages
+        params['PaginationConfig'] = {'PageSize': 300}
+        record_pages = paginator.paginate(**params)
+        foo = 'two'
+        for page in record_pages:
+            record_sets.extend(page['ResourceRecordSets'])
+            sleep(0.25)
+    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:  # pylint: disable=duplicate-except
+        try:
+            record_pages = paginator.paginate(**params)
+            foo = 'three'
+            record_sets = []
+            params['PaginationConfig'] = {'PageSize': 300}
+            for page in record_pages:
+                record_sets.extend(page['ResourceRecordSets'])
+                # 1/4 second should keep us under the 5 requests per second threshold
+                sleep(0.25)
+        except is_boto3_error_message('Throttling'):
+            module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f, code is {}".format(e['Error']['Code']))
+    except Exception as e:  # pylint: disable=duplicate-except
+        module.fail_json_aws(e, msg="smaphameggs, be easy to ctrl+f")
+
+    return {
+        "ResourceRecordSets": record_sets,
+        "list": record_sets,
+        "foo": foo
+    }
+
+
 def get_hosted_zone(client, module):
     params = dict()
 
@@ -355,74 +422,6 @@ def list_health_checks(client, module):
     return {
         "HealthChecks": health_checks,
         "list": health_checks,
-    }
-
-
-#@AWSRetry.jittered_backoff(catch_extra_error_codes=['ThrottlingException'])
-
-
-def record_sets_details(client, module):
-    params = dict()
-
-    if module.params.get('hosted_zone_id'):
-        params['HostedZoneId'] = module.params.get('hosted_zone_id')
-    else:
-        module.fail_json(msg="Hosted Zone Id is required")
-
-    if module.params.get('max_items'):
-        params['MaxItems'] = module.params.get('max_items')
-
-    if module.params.get('start_record_name'):
-        params['StartRecordName'] = module.params.get('start_record_name')
-
-    if module.params.get('type') and not module.params.get('start_record_name'):
-        module.fail_json(msg="start_record_name must be specified if type is set")
-    elif module.params.get('type'):
-        params['StartRecordType'] = module.params.get('type')
-
-    paginator = client.get_paginator('list_resource_record_sets')
-#    import logging
-#    import boto3
-#    logging.basicConfig(filename='/home/zuul/src/github.com/ansible/workshops/boto.log')
-#    boto3.set_stream_logger('', logging.DEBUG)
-    try:
-#        logging.warning('paginate paginate')
-        foo = 'one'
-        record_sets = paginator.paginate(**params).build_full_result()['ResourceRecordSets']
-#        logging.warning(record_sets)
-    except is_boto3_error_message('Throttling'):
-        # The route53 API will only return 300 resource records at a time, maximum.
-        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/route53.html#Route53.Client.list_resource_record_sets
-        # On fast hardware/network with many (ie; thousands) of RRs, it's possible to exceed the
-        # 5 requests per second via pagination.  If that happens, we need to page with artificial
-        # latency via less efficient python.
-        record_sets = []
-        # Override user-supplied MaxItems if provided; if we're throttled we want larger pages
-        params['PaginationConfig'] = {'PageSize': 300}
-        record_pages = paginator.paginate(**params)
-        foo = 'two'
-        for page in record_pages:
-            record_sets.extend(page['ResourceRecordSets'])
-            sleep(0.25)
-    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as e:  # pylint: disable=duplicate-except
-        try:
-            record_pages = paginator.paginate(**params)
-            foo = 'three'
-            record_sets = []
-            params['PaginationConfig'] = {'PageSize': 300}
-            for page in record_pages:
-                record_sets.extend(page['ResourceRecordSets'])
-                # 1/4 second should keep us under the 5 requests per second threshold
-                sleep(0.25)
-        except is_boto3_error_message('Throttling'):
-            module.fail_json_aws(e, msg="foobarbaz, be easy to ctrl+f, code is {}".format(e['Error']['Code']))
-    except Exception as e:  # pylint: disable=duplicate-except
-        module.fail_json_aws(e, msg="smaphameggs, be easy to ctrl+f")
-
-    return {
-        "ResourceRecordSets": record_sets,
-        "list": record_sets,
-        "foo": foo
     }
 
 
