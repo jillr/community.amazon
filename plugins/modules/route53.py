@@ -370,6 +370,8 @@ from ansible_collections.amazon.aws.plugins.module_utils.core import is_boto3_er
 from ansible_collections.amazon.aws.plugins.module_utils.core import scrub_none_parameters
 from ansible_collections.amazon.aws.plugins.module_utils.ec2 import AWSRetry
 
+from time import sleep
+
 MAX_AWS_RETRIES = 10  # How many retries to perform when an API call is failing
 WAIT_RETRY = 5  # how many seconds to wait between propagation status polls
 
@@ -377,8 +379,22 @@ WAIT_RETRY = 5  # how many seconds to wait between propagation status polls
 @AWSRetry.jittered_backoff(retries=MAX_AWS_RETRIES)
 def _list_record_sets(route53, **kwargs):
     paginator = route53.get_paginator('list_resource_record_sets')
-    return paginator.paginate(**kwargs).build_full_result()['ResourceRecordSets']
-
+    rr_result = []
+    try:
+        rr_result = paginator.paginate(**kwargs).build_full_result()['ResourceRecordSets']
+    except is_boto3_error_message('Throttling'):
+        # The route53 API will only return 300 resource records at a time, maximum.
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/route53.html#Route53.Client.list_resource_record_sets
+        # On fast hardware/network with many (ie; thousands) of RRs, it's possible to exceed the
+        # 5 requests per second via pagination.  If that happens, we need to page with artificial
+        # latency via less efficient python.
+        record_sets = []
+        # Override user-supplied MaxItems if provided; if we're throttled we want larger pages
+        rr_result = paginator.paginate(PaginationConfig={'PageSize': 300})
+        for page in rr_result:
+            record_sets.extend(page['ResourceRecordSets'])
+            sleep(0.25)
+    return rr_result
 
 @AWSRetry.jittered_backoff(retries=MAX_AWS_RETRIES)
 def _list_hosted_zones(route53, **kwargs):
