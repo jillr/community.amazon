@@ -376,7 +376,7 @@ MAX_AWS_RETRIES = 10  # How many retries to perform when an API call is failing
 WAIT_RETRY = 5  # how many seconds to wait between propagation status polls
 
 
-@AWSRetry.jittered_backoff(retries=MAX_AWS_RETRIES)
+@AWSRetry.exponential_backoff(retries=MAX_AWS_RETRIES)
 def _list_record_sets(route53, **kwargs):
     paginator = route53.get_paginator('list_resource_record_sets')
     rr_result = []
@@ -396,7 +396,8 @@ def _list_record_sets(route53, **kwargs):
             sleep(0.25)
     return rr_result
 
-@AWSRetry.jittered_backoff(retries=MAX_AWS_RETRIES)
+
+@AWSRetry.exponential_backoff(retries=MAX_AWS_RETRIES)
 def _list_hosted_zones(route53, **kwargs):
     paginator = route53.get_paginator('list_hosted_zones')
     return paginator.paginate(**kwargs).build_full_result()['HostedZones']
